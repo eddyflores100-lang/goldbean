@@ -278,21 +278,41 @@ app.use('/paid/', async (req, res, next) => {
         };
         const recovered = ethers.verifyTypedData(domain, types, auth, payload.signature);
         if (recovered.toLowerCase() !== auth.from.toLowerCase()) {
-          return res.status(403).json({ error: 'Invalid signature - signer mismatch' });
+          return res.status(403).json({
+            error: 'Payment signature verification failed',
+            reason: 'signer_mismatch',
+            message: 'The signature does not match the sender address in the authorization. Ensure you are signing with the same wallet that owns the USDC.',
+            hint: 'Re-generate the EIP-3009 TransferWithAuthorization payload using the correct sender address.',
+          });
         }
         // Check expiry
         if (auth.validBefore && parseInt(auth.validBefore) < Math.floor(Date.now() / 1000)) {
-          return res.status(410).json({ error: 'Payment authorization expired' });
+          return res.status(410).json({
+            error: 'Payment authorization expired',
+            reason: 'valid_before_passed',
+            message: 'The validBefore timestamp in your EIP-3009 authorization has passed. Generate a new authorization with a future validBefore.',
+            hint: 'Set validBefore to at least 5 minutes from now (e.g., Math.floor(Date.now()/1000) + 300).',
+          });
         }
         req.paid = true;
         req.payer = recovered;
         req.auth = auth;
         next();
       } else {
-        return res.status(400).json({ error: 'Invalid payment payload format' });
+        return res.status(400).json({
+            error: 'Invalid payment payload',
+            reason: 'missing_fields',
+            message: 'The x-402-payload header must be a base64-encoded JSON object containing both "authorization" (EIP-3009 TransferWithAuthorization) and "signature" fields.',
+            hint: 'See the x402 spec: https://x402.org/spec',
+          });
       }
     } catch (e) {
-      return res.status(400).json({ error: 'Payment validation error: ' + e.message });
+      return res.status(400).json({
+            error: 'Payment validation failed',
+            reason: 'verification_error',
+            message: e.message,
+            hint: 'Common causes: malformed base64 encoding, wrong chain (must be Base, chainId 8453), or insufficient USDC balance for the TransferWithAuthorization.',
+          });
     }
   });
 
